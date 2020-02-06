@@ -7,6 +7,7 @@ extern crate failure;
 #[macro_use]
 extern crate lazy_static;
 
+#[cfg(target_os = "windows")]
 use crossterm::{
 	event::{
 		poll, read, DisableMouseCapture, EnableMouseCapture, Event as CEvent, KeyCode,
@@ -17,6 +18,13 @@ use crossterm::{
 	terminal::LeaveAlternateScreen,
 	terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen},
 };
+#[cfg(target_os = "windows")]
+use tui::backend::CrosstermBackend;
+
+#[cfg(not(target_os = "windows"))]
+use termion::{input::MouseTerminal, raw::IntoRawMode, screen::AlternateScreen};
+#[cfg(not(target_os = "windows"))]
+use tui::backend::TermionBackend;
 
 use std::{
 	io::{stdout, Write},
@@ -25,7 +33,7 @@ use std::{
 	thread,
 	time::{Duration, Instant},
 };
-use tui::{backend::CrosstermBackend, Terminal};
+use tui::{backend::Backend, Terminal};
 
 pub mod app;
 mod utils {
@@ -147,14 +155,30 @@ fn main() -> error::Result<()> {
 	}
 
 	// Set up up tui and crossterm
-	let mut stdout_val = stdout();
-	enable_raw_mode()?;
-	execute!(stdout_val, EnterAlternateScreen)?;
-	execute!(stdout_val, EnableMouseCapture)?;
+	let mut stdout_val = stdout().into_raw_mode()?;
 
-	let mut terminal = Terminal::new(CrosstermBackend::new(stdout_val))?;
+	let stdout_val = MouseTerminal::from(stdout_val);
+	let stdout_val = AlternateScreen::from(stdout_val);
+	let terminal = Terminal::new(TermionBackend::new(stdout_val))?;
 	terminal.hide_cursor()?;
 	terminal.clear()?;
+
+	// if cfg!(target_os = "windows") {
+	// 	#[cfg(target_os = "windows")]
+	// 	{
+	// 		enable_raw_mode()?;
+	// 		execute!(stdout_val, EnterAlternateScreen)?;
+	// 		execute!(stdout_val, EnableMouseCapture)?;
+	// 		terminal = Terminal::new(CrosstermBackend::new(stdout_val))?;
+	// 		terminal.hide_cursor()?;
+	// 		terminal.clear()?;
+	// 	}
+	// } else {
+	// 	#[cfg(not(target_os = "windows"))]
+	// 	{
+
+	// 	}
+	// };
 
 	// Set panic hook
 	panic::set_hook(Box::new(|info| panic_hook(info)));
@@ -163,31 +187,50 @@ fn main() -> error::Result<()> {
 	let (tx, rx) = mpsc::channel();
 	{
 		let tx = tx.clone();
-		thread::spawn(move || loop {
-			if poll(Duration::from_millis(20)).is_ok() {
-				let mut mouse_timer = Instant::now();
-				let mut keyboard_timer = Instant::now();
-
+		thread::spawn(move || {
+			if cfg!(target_os = "windows") {
+				#[cfg(target_os = "windows")]
 				loop {
-					if poll(Duration::from_millis(20)).is_ok() {
-						if let Ok(event) = read() {
-							if let CEvent::Key(key) = event {
-								if Instant::now().duration_since(keyboard_timer).as_millis() >= 20 {
-									if tx.send(Event::KeyInput(key)).is_err() {
-										return;
+					{
+						if poll(Duration::from_millis(20)).is_ok() {
+							let mut mouse_timer = Instant::now();
+							let mut keyboard_timer = Instant::now();
+
+							loop {
+								if poll(Duration::from_millis(20)).is_ok() {
+									if let Ok(event) = read() {
+										if let CEvent::Key(key) = event {
+											if Instant::now()
+												.duration_since(keyboard_timer)
+												.as_millis() >= 20
+											{
+												if tx.send(Event::KeyInput(key)).is_err() {
+													return;
+												}
+												keyboard_timer = Instant::now();
+											}
+										} else if let CEvent::Mouse(mouse) = event {
+											if Instant::now()
+												.duration_since(mouse_timer)
+												.as_millis() >= 20
+											{
+												if tx.send(Event::MouseInput(mouse)).is_err() {
+													return;
+												}
+												mouse_timer = Instant::now();
+											}
+										}
 									}
-									keyboard_timer = Instant::now();
-								}
-							} else if let CEvent::Mouse(mouse) = event {
-								if Instant::now().duration_since(mouse_timer).as_millis() >= 20 {
-									if tx.send(Event::MouseInput(mouse)).is_err() {
-										return;
-									}
-									mouse_timer = Instant::now();
 								}
 							}
 						}
 					}
+				}
+			} else {
+				#[cfg(not(target_os = "windows"))]
+				{
+					let async_reader = termion::async_stdin();
+					loop {}
 				}
 			}
 		});
@@ -380,9 +423,8 @@ fn main() -> error::Result<()> {
 	Ok(())
 }
 
-fn try_drawing(
-	terminal: &mut tui::terminal::Terminal<tui::backend::CrosstermBackend<std::io::Stdout>>,
-	app: &mut app::App, painter: &mut canvas::Painter,
+fn try_drawing<B: Backend>(
+	terminal: &mut B, app: &mut app::App, painter: &mut canvas::Painter,
 ) -> error::Result<()> {
 	if let Err(err) = painter.draw_data(terminal, app) {
 		cleanup_terminal(terminal)?;
@@ -393,13 +435,19 @@ fn try_drawing(
 	Ok(())
 }
 
-fn cleanup_terminal(
-	terminal: &mut tui::terminal::Terminal<tui::backend::CrosstermBackend<std::io::Stdout>>,
-) -> error::Result<()> {
-	disable_raw_mode()?;
-	execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-	execute!(terminal.backend_mut(), DisableMouseCapture)?;
-	terminal.show_cursor()?;
+fn cleanup_terminal<B: Backend>(terminal: &mut B) -> error::Result<()> {
+	if cfg!(target_os = "windows") {
+		#[cfg(target_os = "windows")]
+		{
+			disable_raw_mode()?;
+			execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+			execute!(terminal.backend_mut(), DisableMouseCapture)?;
+			terminal.show_cursor()?;
+		}
+	} else {
+		#[cfg(not(target_os = "windows"))]
+		{}
+	}
 
 	Ok(())
 }

@@ -58,40 +58,6 @@ impl From<&CpuPoint> for (f64, f64) {
 	}
 }
 
-pub fn convert_all(app: &App, current_data: &data_farmer::DataCollection) {
-	let current_time = current_data.current_instant;
-
-	// Network
-	let network_data: ConvertedNetworkData = ConvertedNetworkData::default();
-	let network_data_rx: Vec<(f64, f64)> = Vec::new();
-	let network_data_tx: Vec<(f64, f64)> = Vec::new();
-	let rx_display: String = String::default();
-	let tx_display: String = String::default();
-	let total_rx_display: String = String::default();
-	let total_tx_display: String = String::default();
-
-	// Disk
-	let mut disk_table_data: Vec<Vec<String>> = Vec::new();
-
-	// Temp
-	let temp_sensor_table_data: Vec<Vec<String>> = update_temp_row(app);
-
-	// Mem
-	let mut mem_vector: Vec<(f64, f64)> = Vec::new();
-	let mut swap_vector: Vec<(f64, f64)> = Vec::new();
-	let memory_and_swap_labels: (String, String);
-
-	// CPU
-	let mut cpu_vector: Vec<ConvertedCpuData> = Vec::new();
-
-	// Process
-	let mut process_single_list: HashMap<u32, ProcessHarvest> = HashMap::new();
-	let mut process_grouped_hashmap: HashMap<String, (u32, f64, f64, Vec<u32>)> =
-		std::collections::HashMap::new();
-
-	for (time, data) in &current_data.timed_data_vec {}
-}
-
 pub fn update_temp_row(app: &App) -> Vec<Vec<String>> {
 	let mut sensor_vector: Vec<Vec<String>> = Vec::new();
 
