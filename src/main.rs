@@ -325,36 +325,34 @@ fn main() -> error::Result<()> {
 						app.data_collection.eat_data(&data);
 
 						// Convert all data into tui-compliant components
+						let converted_data = convert_all(&app);
 
 						// Network
-						let network_data = convert_network_data_points(&app.data_collection);
-						app.canvas_data.network_data_rx = network_data.rx;
-						app.canvas_data.network_data_tx = network_data.tx;
-						app.canvas_data.rx_display = network_data.rx_display;
-						app.canvas_data.tx_display = network_data.tx_display;
-						app.canvas_data.total_rx_display = network_data.total_rx_display;
-						app.canvas_data.total_tx_display = network_data.total_tx_display;
+						app.canvas_data.network_data_rx = converted_data.network_data_rx;
+						app.canvas_data.network_data_tx = converted_data.network_data_tx;
+						app.canvas_data.rx_display = converted_data.rx_display;
+						app.canvas_data.tx_display = converted_data.tx_display;
+						app.canvas_data.total_rx_display = converted_data.total_rx_display;
+						app.canvas_data.total_tx_display = converted_data.total_tx_display;
 
 						// Disk
-						app.canvas_data.disk_data = update_disk_row(&app.data_collection);
+						app.canvas_data.disk_data = converted_data.disk_table_data;
 
 						// Temperatures
-						app.canvas_data.temp_sensor_data = update_temp_row(&app);
+						app.canvas_data.temp_sensor_data = converted_data.temp_sensor_table_data;
 						// Memory
-						app.canvas_data.mem_data = update_mem_data_points(&app.data_collection);
-						app.canvas_data.swap_data = update_swap_data_points(&app.data_collection);
-						let memory_and_swap_labels = update_mem_labels(&app.data_collection);
-						app.canvas_data.mem_label = memory_and_swap_labels.0;
-						app.canvas_data.swap_label = memory_and_swap_labels.1;
+						app.canvas_data.mem_data = converted_data.mem_vector;
+						app.canvas_data.swap_data = converted_data.swap_vector;
+						app.canvas_data.mem_label = converted_data.memory_label;
+						app.canvas_data.swap_label = converted_data.swap_label;
 
 						// CPU
-						app.canvas_data.cpu_data =
-							update_cpu_data_points(app.show_average_cpu, &app.data_collection);
+						app.canvas_data.cpu_data = converted_data.cpu_vector;
 
 						// Processes
-						let (single, grouped) = convert_process_data(&app.data_collection);
-						app.canvas_data.process_data = single;
-						app.canvas_data.grouped_process_data = grouped;
+						app.canvas_data.process_data = converted_data.process_single_list;
+						app.canvas_data.grouped_process_data =
+							converted_data.process_grouped_hashmap;
 						update_final_process_list(&mut app);
 					}
 				}

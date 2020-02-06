@@ -3,7 +3,7 @@
 
 use crate::{
 	app::{
-		data_farmer,
+		data_farmer::{self, TimedData},
 		data_harvester::{self, processes::ProcessHarvest},
 		App,
 	},
@@ -11,7 +11,7 @@ use crate::{
 	utils::gen_util::{get_exact_byte_values, get_simple_byte_values},
 };
 use constants::*;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 #[derive(Default, Debug)]
 pub struct ConvertedNetworkData {
@@ -58,44 +58,74 @@ impl From<&CpuPoint> for (f64, f64) {
 	}
 }
 
-pub fn convert_all(app: &App, current_data: &data_farmer::DataCollection) {
-	let current_time = current_data.current_instant;
-
-	// Network
-	let network_data: ConvertedNetworkData = ConvertedNetworkData::default();
-	let network_data_rx: Vec<(f64, f64)> = Vec::new();
-	let network_data_tx: Vec<(f64, f64)> = Vec::new();
-	let rx_display: String = String::default();
-	let tx_display: String = String::default();
-	let total_rx_display: String = String::default();
-	let total_tx_display: String = String::default();
-
-	// Disk
-	let mut disk_table_data: Vec<Vec<String>> = Vec::new();
-
-	// Temp
-	let temp_sensor_table_data: Vec<Vec<String>> = update_temp_row(app);
-
-	// Mem
-	let mut mem_vector: Vec<(f64, f64)> = Vec::new();
-	let mut swap_vector: Vec<(f64, f64)> = Vec::new();
-	let memory_and_swap_labels: (String, String);
-
-	// CPU
-	let mut cpu_vector: Vec<ConvertedCpuData> = Vec::new();
-
-	// Process
-	let mut process_single_list: HashMap<u32, ProcessHarvest> = HashMap::new();
-	let mut process_grouped_hashmap: HashMap<String, (u32, f64, f64, Vec<u32>)> =
-		std::collections::HashMap::new();
-
-	for (time, data) in &current_data.timed_data_vec {}
+#[derive(Default)]
+pub struct ConvertedData {
+	pub network_data: ConvertedNetworkData,
+	pub network_data_rx: Vec<(f64, f64)>,
+	pub network_data_tx: Vec<(f64, f64)>,
+	pub rx_display: String,
+	pub tx_display: String,
+	pub total_rx_display: String,
+	pub total_tx_display: String,
+	pub disk_table_data: Vec<Vec<String>>,
+	pub temp_sensor_table_data: Vec<Vec<String>>,
+	pub mem_vector: Vec<(f64, f64)>,
+	pub swap_vector: Vec<(f64, f64)>,
+	pub memory_label: String,
+	pub swap_label: String,
+	pub cpu_vector: Vec<ConvertedCpuData>,
+	pub process_single_list: HashMap<u32, ProcessHarvest>,
+	pub process_grouped_hashmap: Vec<ConvertedProcessData>,
 }
 
-pub fn update_temp_row(app: &App) -> Vec<Vec<String>> {
-	let mut sensor_vector: Vec<Vec<String>> = Vec::new();
+pub fn convert_all(app: &App) -> ConvertedData {
+	let current_data: &data_farmer::DataCollection = &app.data_collection;
+	let current_time = &current_data.current_instant;
 
-	let current_data = &app.data_collection;
+	let mut converted_data = ConvertedData::default();
+
+	converted_data.disk_table_data = convert_disk_row(current_data);
+	converted_data.temp_sensor_table_data = convert_temp_row(app, current_data);
+
+	for (time, data) in &current_data.timed_data_vec {
+		converted_data.cpu_vector.extend(convert_cpu_data_points(
+			app.show_average_cpu,
+			current_data,
+			current_time,
+			time,
+			data,
+		));
+
+		converted_data
+			.mem_vector
+			.extend(convert_mem_data_points(current_time, time, data));
+
+		converted_data
+			.swap_vector
+			.extend(convert_swap_data_points(current_time, time, data));
+
+		let (mem_label, swap_label) = convert_mem_labels(current_data);
+		converted_data.memory_label = mem_label;
+		converted_data.swap_label = swap_label;
+
+		let converted_network = convert_network_data_points(current_data, current_time, time, data);
+		converted_data.network_data_rx.extend(converted_network.rx);
+		converted_data.network_data_tx.extend(converted_network.tx);
+		converted_data.rx_display = converted_network.rx_display;
+		converted_data.tx_display = converted_network.tx_display;
+		converted_data.total_rx_display = converted_network.total_rx_display;
+		converted_data.total_tx_display = converted_network.total_tx_display;
+
+		let (single, grouped) = convert_process_data(current_data);
+		converted_data.process_single_list = single;
+		converted_data.process_grouped_hashmap = grouped;
+	}
+
+	converted_data
+}
+
+pub fn convert_temp_row(app: &App, current_data: &data_farmer::DataCollection) -> Vec<Vec<String>> {
+	let mut sensor_vector: Vec<Vec<String>> = Vec::new();
 	let temp_type = &app.temperature_type;
 
 	if current_data.temp_harvest.is_empty() {
@@ -117,7 +147,7 @@ pub fn update_temp_row(app: &App) -> Vec<Vec<String>> {
 	sensor_vector
 }
 
-pub fn update_disk_row(current_data: &data_farmer::DataCollection) -> Vec<Vec<String>> {
+pub fn convert_disk_row(current_data: &data_farmer::DataCollection) -> Vec<Vec<String>> {
 	let mut disk_vector: Vec<Vec<String>> = Vec::new();
 	for (itx, disk) in current_data.disk_harvest.iter().enumerate() {
 		let io_activity = if current_data.io_labels.len() > itx {
@@ -153,96 +183,89 @@ pub fn update_disk_row(current_data: &data_farmer::DataCollection) -> Vec<Vec<St
 	disk_vector
 }
 
-pub fn update_cpu_data_points(
-	show_avg_cpu: bool, current_data: &data_farmer::DataCollection,
+pub fn convert_cpu_data_points(
+	show_avg_cpu: bool, current_data: &data_farmer::DataCollection, current_time: &Instant,
+	time: &Instant, data: &TimedData,
 ) -> Vec<ConvertedCpuData> {
 	let mut cpu_data_vector: Vec<ConvertedCpuData> = Vec::new();
-	let current_time = current_data.current_instant;
 	let cpu_listing_offset = if show_avg_cpu { 0 } else { 1 };
 
-	for (time, data) in &current_data.timed_data_vec {
-		let time_from_start: f64 = (TIME_STARTS_FROM as f64
-			- current_time.duration_since(*time).as_millis() as f64)
-			.floor();
+	let time_from_start: f64 =
+		(TIME_STARTS_FROM as f64 - current_time.duration_since(*time).as_millis() as f64).floor();
 
-		for (itx, cpu) in data.cpu_data.iter().enumerate() {
-			if !show_avg_cpu && itx == 0 {
-				continue;
-			}
+	for (itx, cpu) in data.cpu_data.iter().enumerate() {
+		if !show_avg_cpu && itx == 0 {
+			continue;
+		}
 
-			// Check if the vector exists yet
-			let itx_offset = itx - cpu_listing_offset;
-			if cpu_data_vector.len() <= itx_offset {
-				cpu_data_vector.push(ConvertedCpuData::default());
-				cpu_data_vector[itx_offset].cpu_name = if show_avg_cpu && itx_offset == 0 {
-					"AVG".to_string()
-				} else {
-					current_data.cpu_harvest[itx].cpu_name.to_uppercase()
-				};
-			}
+		// Check if the vector exists yet
+		let itx_offset = itx - cpu_listing_offset;
+		if cpu_data_vector.len() <= itx_offset {
+			cpu_data_vector.push(ConvertedCpuData::default());
+			cpu_data_vector[itx_offset].cpu_name = if show_avg_cpu && itx_offset == 0 {
+				"AVG".to_string()
+			} else {
+				current_data.cpu_harvest[itx].cpu_name.to_uppercase()
+			};
+		}
 
-			//Insert joiner points
-			for &(joiner_offset, joiner_val) in &cpu.1 {
-				let offset_time = time_from_start - joiner_offset as f64;
-				cpu_data_vector[itx_offset].cpu_data.push(CpuPoint {
-					time: offset_time,
-					usage: joiner_val,
-				});
-			}
-
+		//Insert joiner points
+		for &(joiner_offset, joiner_val) in &cpu.1 {
+			let offset_time = time_from_start - joiner_offset as f64;
 			cpu_data_vector[itx_offset].cpu_data.push(CpuPoint {
-				time: time_from_start,
-				usage: cpu.0,
+				time: offset_time,
+				usage: joiner_val,
 			});
 		}
+
+		cpu_data_vector[itx_offset].cpu_data.push(CpuPoint {
+			time: time_from_start,
+			usage: cpu.0,
+		});
 	}
 
 	cpu_data_vector
 }
 
-pub fn update_mem_data_points(current_data: &data_farmer::DataCollection) -> Vec<(f64, f64)> {
+pub fn convert_mem_data_points(
+	current_time: &Instant, time: &Instant, data: &TimedData,
+) -> Vec<(f64, f64)> {
 	let mut result: Vec<(f64, f64)> = Vec::new();
-	let current_time = current_data.current_instant;
 
-	for (time, data) in &current_data.timed_data_vec {
-		let time_from_start: f64 = (TIME_STARTS_FROM as f64
-			- current_time.duration_since(*time).as_millis() as f64)
-			.floor();
+	let time_from_start: f64 =
+		(TIME_STARTS_FROM as f64 - current_time.duration_since(*time).as_millis() as f64).floor();
 
-		//Insert joiner points
-		for &(joiner_offset, joiner_val) in &data.mem_data.1 {
-			let offset_time = time_from_start - joiner_offset as f64;
-			result.push((offset_time, joiner_val));
-		}
-
-		result.push((time_from_start, data.mem_data.0));
+	//Insert joiner points
+	for &(joiner_offset, joiner_val) in &data.mem_data.1 {
+		let offset_time = time_from_start - joiner_offset as f64;
+		result.push((offset_time, joiner_val));
 	}
+
+	result.push((time_from_start, data.mem_data.0));
 
 	result
 }
 
-pub fn update_swap_data_points(current_data: &data_farmer::DataCollection) -> Vec<(f64, f64)> {
+pub fn convert_swap_data_points(
+	current_time: &Instant, time: &Instant, data: &TimedData,
+) -> Vec<(f64, f64)> {
 	let mut result: Vec<(f64, f64)> = Vec::new();
-	let current_time = current_data.current_instant;
 
-	for (time, data) in &current_data.timed_data_vec {
-		let time_from_start: f64 = (TIME_STARTS_FROM as f64
-			- current_time.duration_since(*time).as_millis() as f64)
-			.floor();
+	let time_from_start: f64 =
+		(TIME_STARTS_FROM as f64 - current_time.duration_since(*time).as_millis() as f64).floor();
 
-		//Insert joiner points
-		for &(joiner_offset, joiner_val) in &data.swap_data.1 {
-			let offset_time = time_from_start - joiner_offset as f64;
-			result.push((offset_time, joiner_val));
-		}
-
-		result.push((time_from_start, data.swap_data.0));
+	//Insert joiner points
+	for &(joiner_offset, joiner_val) in &data.swap_data.1 {
+		let offset_time = time_from_start - joiner_offset as f64;
+		result.push((offset_time, joiner_val));
 	}
+
+	result.push((time_from_start, data.swap_data.0));
 
 	result
 }
 
-pub fn update_mem_labels(current_data: &data_farmer::DataCollection) -> (String, String) {
+pub fn convert_mem_labels(current_data: &data_farmer::DataCollection) -> (String, String) {
 	let mem_label = if current_data.memory_harvest.mem_total_in_mb == 0 {
 		"".to_string()
 	} else {
@@ -279,31 +302,28 @@ pub fn update_mem_labels(current_data: &data_farmer::DataCollection) -> (String,
 }
 
 pub fn convert_network_data_points(
-	current_data: &data_farmer::DataCollection,
+	current_data: &data_farmer::DataCollection, current_time: &Instant, time: &Instant,
+	data: &TimedData,
 ) -> ConvertedNetworkData {
 	let mut rx: Vec<(f64, f64)> = Vec::new();
 	let mut tx: Vec<(f64, f64)> = Vec::new();
 
-	let current_time = current_data.current_instant;
-	for (time, data) in &current_data.timed_data_vec {
-		let time_from_start: f64 = (TIME_STARTS_FROM as f64
-			- current_time.duration_since(*time).as_millis() as f64)
-			.floor();
+	let time_from_start: f64 =
+		(TIME_STARTS_FROM as f64 - current_time.duration_since(*time).as_millis() as f64).floor();
 
-		//Insert joiner points
-		for &(joiner_offset, joiner_val) in &data.rx_data.1 {
-			let offset_time = time_from_start - joiner_offset as f64;
-			rx.push((offset_time, joiner_val));
-		}
-
-		for &(joiner_offset, joiner_val) in &data.tx_data.1 {
-			let offset_time = time_from_start - joiner_offset as f64;
-			tx.push((offset_time, joiner_val));
-		}
-
-		rx.push((time_from_start, data.rx_data.0));
-		tx.push((time_from_start, data.rx_data.0));
+	//Insert joiner points
+	for &(joiner_offset, joiner_val) in &data.rx_data.1 {
+		let offset_time = time_from_start - joiner_offset as f64;
+		rx.push((offset_time, joiner_val));
 	}
+
+	for &(joiner_offset, joiner_val) in &data.tx_data.1 {
+		let offset_time = time_from_start - joiner_offset as f64;
+		tx.push((offset_time, joiner_val));
+	}
+
+	rx.push((time_from_start, data.rx_data.0));
+	tx.push((time_from_start, data.rx_data.0));
 
 	let total_rx_converted_result: (f64, String);
 	let rx_converted_result: (f64, String);
