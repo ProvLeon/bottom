@@ -8,7 +8,7 @@ use data_farmer::*;
 use crate::{canvas, constants, utils::error::Result};
 mod process_killer;
 
-use unicode_segmentation::{GraphemeCursor};
+use unicode_segmentation::GraphemeCursor;
 use unicode_width::UnicodeWidthStr;
 
 const MAX_SEARCH_LENGTH: usize = 200;
@@ -165,6 +165,7 @@ pub struct AppConfigFields {
 	pub show_average_cpu: bool,
 	pub use_current_cpu_total: bool,
 	pub show_disabled_data: bool,
+	pub disabled_borders: bool,
 }
 
 /// Network specific
@@ -255,7 +256,7 @@ impl App {
 		show_average_cpu: bool, temperature_type: temperature::TemperatureType,
 		update_rate_in_milliseconds: u64, use_dot: bool, left_legend: bool,
 		use_current_cpu_total: bool, current_widget_selected: WidgetPosition,
-		show_disabled_data: bool,
+		show_disabled_data: bool, disabled_borders: bool,
 	) -> App {
 		App {
 			process_sorting_type: processes::ProcessSorting::CPU,
@@ -284,6 +285,7 @@ impl App {
 				left_legend,
 				use_current_cpu_total,
 				show_disabled_data,
+				disabled_borders,
 			},
 			is_expanded: false,
 			is_resized: false,
@@ -620,8 +622,7 @@ impl App {
 	#[allow(unused_variables)]
 	pub fn skip_word_backspace(&mut self) {
 		if let WidgetPosition::ProcessSearch = self.current_widget_selected {
-			if self.process_search_state.search_state.is_enabled {
-			}
+			if self.process_search_state.search_state.is_enabled {}
 		}
 	}
 

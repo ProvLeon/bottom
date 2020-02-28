@@ -81,6 +81,26 @@ pub struct DisplayableData {
 	pub cpu_data: Vec<ConvertedCpuData>,
 }
 
+pub struct BorderSettings {
+	pub border_type: Borders,
+}
+
+impl BorderSettings {
+	pub fn initialize(&mut self, app: &app::App) {
+		if app.app_config_fields.disabled_borders {
+			self.border_type = Borders::NONE;
+		}
+	}
+}
+
+impl Default for BorderSettings {
+	fn default() -> Self {
+		BorderSettings {
+			border_type: Borders::ALL,
+		}
+	}
+}
+
 #[allow(dead_code)]
 #[derive(Default)]
 /// Handles the canvas' state.  TODO: [OPT] implement this.
@@ -100,6 +120,7 @@ pub struct Painter {
 	pub styled_process_help_text: Vec<Text<'static>>,
 	pub styled_search_help_text: Vec<Text<'static>>,
 	is_mac_os: bool,
+	pub border_settings: BorderSettings,
 }
 
 impl Painter {
@@ -108,7 +129,7 @@ impl Painter {
 	/// This bypasses some logic checks (size > 2, for example) but this
 	/// assumes that you, the programmer, are sane and do not do stupid things.
 	/// RIGHT?
-	pub fn initialize(&mut self) {
+	pub fn initialize(&mut self, app: &app::App) {
 		self.is_mac_os = cfg!(target_os = "macos");
 
 		self.styled_general_help_text.push(Text::Styled(
@@ -143,6 +164,8 @@ impl Painter {
 				.map(|&text| Text::Styled(text.into(), self.colours.text_style))
 				.collect::<Vec<_>>(),
 		);
+
+		self.border_settings.initialize(app);
 	}
 
 	// TODO: [REFACTOR] We should clean this up tbh
@@ -216,7 +239,7 @@ impl Painter {
 						.title(&help_title)
 						.title_style(self.colours.border_style)
 						.style(self.colours.border_style)
-						.borders(Borders::ALL)
+						.borders(self.border_settings.border_type)
 						.border_style(self.colours.border_style),
 				)
 				.style(self.colours.text_style)
@@ -270,7 +293,7 @@ impl Painter {
 								.title(&error_title)
 								.title_style(self.colours.border_style)
 								.style(self.colours.border_style)
-								.borders(Borders::ALL)
+								.borders(self.border_settings.border_type)
 								.border_style(self.colours.border_style),
 						)
 						.style(self.colours.text_style)
@@ -329,7 +352,7 @@ impl Painter {
 									.title(&dd_title)
 									.title_style(self.colours.border_style)
 									.style(self.colours.border_style)
-									.borders(Borders::ALL)
+									.borders(self.border_settings.border_type)
 									.border_style(self.colours.border_style),
 							)
 							.style(self.colours.text_style)
@@ -605,7 +628,7 @@ impl Painter {
 					} else {
 						self.colours.widget_title_style
 					})
-					.borders(Borders::ALL)
+					.borders(self.border_settings.border_type)
 					.border_style(match app_state.current_widget_selected {
 						app::WidgetPosition::Cpu => self.colours.highlighted_border_style,
 						_ => self.colours.border_style,
@@ -747,7 +770,7 @@ impl Painter {
 						_ => self.colours.border_style,
 					}
 				})
-				.borders(Borders::ALL)
+				.borders(self.border_settings.border_type)
 				.border_style(match app_state.current_widget_selected {
 					app::WidgetPosition::Cpu => self.colours.highlighted_border_style,
 					_ => self.colours.border_style,
@@ -824,7 +847,7 @@ impl Painter {
 					} else {
 						self.colours.widget_title_style
 					})
-					.borders(Borders::ALL)
+					.borders(self.border_settings.border_type)
 					.border_style(match app_state.current_widget_selected {
 						app::WidgetPosition::Mem => self.colours.highlighted_border_style,
 						_ => self.colours.border_style,
@@ -874,7 +897,7 @@ impl Painter {
 					} else {
 						self.colours.widget_title_style
 					})
-					.borders(Borders::ALL)
+					.borders(self.border_settings.border_type)
 					.border_style(match app_state.current_widget_selected {
 						app::WidgetPosition::Network => self.colours.highlighted_border_style,
 						_ => self.colours.border_style,
@@ -947,12 +970,14 @@ impl Painter {
 
 		// Draw
 		Table::new(NETWORK_HEADERS.iter(), mapped_network)
-			.block(Block::default().borders(Borders::ALL).border_style(
-				match app_state.current_widget_selected {
-					app::WidgetPosition::Network => self.colours.highlighted_border_style,
-					_ => self.colours.border_style,
-				},
-			))
+			.block(
+				Block::default()
+					.borders(self.border_settings.border_type)
+					.border_style(match app_state.current_widget_selected {
+						app::WidgetPosition::Network => self.colours.highlighted_border_style,
+						_ => self.colours.border_style,
+					}),
+			)
 			.header_style(self.colours.table_header_style)
 			.style(self.colours.text_style)
 			.widths(
@@ -1045,7 +1070,7 @@ impl Painter {
 					} else {
 						self.colours.widget_title_style
 					})
-					.borders(Borders::ALL)
+					.borders(self.border_settings.border_type)
 					.border_style(match app_state.current_widget_selected {
 						app::WidgetPosition::Temp => self.colours.highlighted_border_style,
 						_ => self.colours.border_style,
@@ -1142,7 +1167,7 @@ impl Painter {
 					} else {
 						self.colours.widget_title_style
 					})
-					.borders(Borders::ALL)
+					.borders(self.border_settings.border_type)
 					.border_style(match app_state.current_widget_selected {
 						app::WidgetPosition::Disk => self.colours.highlighted_border_style,
 						_ => self.colours.border_style,
@@ -1320,7 +1345,7 @@ impl Painter {
 		Paragraph::new(search_text.iter())
 			.block(
 				Block::default()
-					.borders(Borders::ALL)
+					.borders(self.border_settings.border_type)
 					.title(&title)
 					.title_style(current_border_style)
 					.border_style(current_border_style),
@@ -1472,7 +1497,7 @@ impl Painter {
 					} else {
 						self.colours.widget_title_style
 					})
-					.borders(Borders::ALL)
+					.borders(self.border_settings.border_type)
 					.border_style(match app_state.current_widget_selected {
 						app::WidgetPosition::Process => self.colours.highlighted_border_style,
 						_ => self.colours.border_style,

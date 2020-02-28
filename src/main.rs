@@ -81,6 +81,7 @@ struct ConfigFlags {
 	regex: Option<bool>,
 	default_widget: Option<String>,
 	show_disabled_data: Option<bool>,
+	disable_borders: Option<bool>,
 	//disabled_cpu_cores: Option<Vec<u64>>, // TODO: [FEATURE] Enable disabling cores in config/flags
 }
 
@@ -127,6 +128,7 @@ fn get_matches() -> clap::ArgMatches<'static> {
 		(@arg WHOLE_WORD: -W --whole_word "Match whole word when searching by default.")
 		(@arg REGEX_DEFAULT: -R --regex "Use regex in searching by default.")
 		(@arg SHOW_DISABLED_DATA: -s --show_disabled_data "Show disabled data entries.")
+		(@arg DISABLE_BORDERS: -d --disabled_borders "Disable borders.")
 		(@group DEFAULT_WIDGET =>
 			(@arg CPU_WIDGET: --cpu_default "Selects the CPU widget to be selected by default.")
 			(@arg MEM_WIDGET: --memory_default "Selects the memory widget to be selected by default.")
@@ -158,6 +160,7 @@ fn main() -> error::Result<()> {
 	let use_current_cpu_total = get_use_current_cpu_total_option(&matches, &config);
 	let current_widget_selected = get_default_widget(&matches, &config);
 	let show_disabled_data = get_show_disabled_data_option(&matches, &config);
+	let disabled_borders = get_disabled_borders_option(&matches, &config);
 
 	// Create "app" struct, which will control most of the program and store settings/state
 	let mut app = App::new(
@@ -169,6 +172,7 @@ fn main() -> error::Result<()> {
 		use_current_cpu_total,
 		current_widget_selected,
 		show_disabled_data,
+		disabled_borders,
 	);
 
 	enable_app_grouping(&matches, &config, &mut app);
@@ -217,7 +221,7 @@ fn main() -> error::Result<()> {
 		return Err(config_check);
 	}
 	painter.colours.generate_remaining_cpu_colours();
-	painter.initialize();
+	painter.initialize(&app);
 
 	let mut first_run = true;
 	loop {
@@ -570,6 +574,19 @@ fn get_show_disabled_data_option(matches: &clap::ArgMatches<'static>, config: &C
 		}
 	}
 
+	false
+}
+
+fn get_disabled_borders_option(matches: &clap::ArgMatches<'static>, config: &Config) -> bool {
+	if matches.is_present("DISABLE_BORDERS") {
+		return true;
+	} else if let Some(flags) = &config.flags {
+		if let Some(disable_borders) = flags.disable_borders {
+			if disable_borders {
+				return true;
+			}
+		}
+	}
 	false
 }
 
